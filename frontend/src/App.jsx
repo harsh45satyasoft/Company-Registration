@@ -2,6 +2,7 @@ import React from "react";
 import { BrowserRouter as Router, Routes, Route, Link } from "react-router-dom";
 import Registration from "./components/Registration";
 import CompanyListing from "./components/CompanyListing";
+import SignUp from "./components/SignUp";
 import "./styles/global.css";
 
 function App() {
@@ -28,7 +29,26 @@ function App() {
             <h1 style={{ color: "white", margin: 0 }}>Company Portal</h1>
             <div>
               <Link
-                to="/"
+                to="/signup"
+                style={{
+                  color: "white",
+                  textDecoration: "none",
+                  marginRight: "2rem",
+                  padding: "0.5rem 1rem",
+                  borderRadius: "4px",
+                  transition: "background-color 0.3s",
+                }}
+                onMouseOver={(e) =>
+                  (e.target.style.backgroundColor = "rgba(124, 110, 110, 0.1)")
+                }
+                onMouseOut={(e) =>
+                  (e.target.style.backgroundColor = "transparent")
+                }
+              >
+                Sign Up
+              </Link>
+              <Link
+                to="/register"
                 style={{
                   color: "white",
                   textDecoration: "none",
@@ -44,7 +64,7 @@ function App() {
                   (e.target.style.backgroundColor = "transparent")
                 }
               >
-                Register
+                Register Company
               </Link>
               <Link
                 to="/listing"
@@ -69,8 +89,10 @@ function App() {
         </nav>
 
         <Routes>
-          <Route path="/" element={<Registration />} />
+          <Route path="/signup" element={<SignUp />} />
+          <Route path="/register" element={<Registration />} />
           <Route path="/listing" element={<CompanyListing />} />
+          <Route path="/" element={<SignUp />} />
         </Routes>
       </div>
     </Router>

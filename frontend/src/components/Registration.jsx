@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";                          //For navigation one page to another
 import { checkEmailAvailability, registerCompany } from "../services/api";
 import MapComponent from "./MapComponent";
+import axios from "axios";
 
 const Registration = () => {
   const navigate = useNavigate();
@@ -27,17 +28,41 @@ const Registration = () => {
   const [submitStatus, setSubmitStatus] = useState({ message: "", type: "" });
   const [isGeocodingAddress, setIsGeocodingAddress] = useState(false);
   const [hasInitialLocation, setHasInitialLocation] = useState(false);     // Track if location was set from address
+  const [loading, setLoading] = useState(false);
+  const [emailAvailable, setEmailAvailable] = useState(true);
+  const [showAlert, setShowAlert] = useState(false);
+
+  useEffect(() => {
+    // Check if user is authenticated
+    const token = localStorage.getItem("token");                          //This tries to retrieve a token (usually a JWT or auth token) from the browser's localStorage.
+    if (!token) {
+      setShowAlert(true);                                                 //You have a UI alert component (e.g., a red message that says "You must be signed in") controlled by showAlert state.
+      const timer = setTimeout(() => {
+        navigate("/signup");                                              //(after 3 seconds)Then you automatically navigate to the /signup
+      }, 3000);                                                           //After showing the alert, you give the user 3 seconds (3000ms) to read it.
+      return () => clearTimeout(timer);
+    }
+  }, [navigate]);                                                         //If the component unmounts before the 3-second timeout finishes, this will cancel the timer to avoid memory leaks or unwanted navigation.
 
   // Debounced email check
   useEffect(() => {
     if (formData.email && formData.email.includes("@")) {                //Check if Email Exists and Looks Valid
       const timeoutId = setTimeout(async () => {                         //Only triggers the check if the user stops typing for 500ms.(This sets a 500ms timer before making the API call. This technique is called debouncing, which prevents making an API request every keystroke.)
         try {
-          const result = await checkEmailAvailability(formData.email);   //Sends a POST request to check whether the email already exists in the database.
+          const response = await axios.post(
+            "http://localhost:5000/api/companies/check-email",
+            { email: formData.email },
+            {
+              headers: {                                                //This is a standard format for sending authentication tokens in HTTP.
+                Authorization: `Bearer ${localStorage.getItem("token")}`, //Bearer is the type of token. The backend expects it in this format.
+              },
+            }
+          );
           setEmailStatus({
-            message: result.message,
-            isValid: result.available,
+            message: response.data.message,
+            isValid: response.data.available,
           });
+          setEmailAvailable(response.data.available);
         } catch (error) {
           setEmailStatus({                                               //If the API call fails (e.g., network issue), show a generic error message and reset validity.
             message: "Error checking email",
@@ -56,10 +81,10 @@ const Registration = () => {
   useEffect(() => {
     if (formData.address.trim() && formData.address.length > 2) {
       const timeoutId = setTimeout(async () => {
-        await geocodeAddress(formData.address);
+        await geocodeAddress(formData.address);                        // 1-second delay before triggering the geocodeAddress() function.
       }, 1000);
 
-      return () => clearTimeout(timeoutId);
+      return () => clearTimeout(timeoutId);                            //If the user types again before 1 second is up, cancel the previous geocoding request.
     } else {
       // Clear location when address is cleared
       if (!formData.address.trim()) {
@@ -71,7 +96,7 @@ const Registration = () => {
         setHasInitialLocation(false);
       }
     }
-  }, [formData.address]);
+  }, [formData.address]);                                                //Runs whenever formData.address changes
 
   const geocodeAddress = async (address) => {                            //Defines an async function that accepts an address string and attempts to geocode it (i.e., get its coordinates).
     if (isGeocodingAddress) return;                                      //If a geocoding request is already in progress (isGeocodingAddress is true), it exits early to prevent duplicate requests.
@@ -80,9 +105,9 @@ const Registration = () => {
 
     try {
       const response = await fetch(
-        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(
+        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(   //This fetch call sends a GET request to the Nominatim API to convert a human-readable address (like "New Delhi, India") into latitude and longitude (aka geocoding).
           address
-        )}&limit=1`
+        )}&limit=1`                                                      //Limits response to a single most relevant result
       );
       const data = await response.json();                                //Converts the response into a JavaScript object (data is an array of location results).
 
@@ -247,17 +272,36 @@ const Registration = () => {
     setSubmitStatus({ message: "", type: "" });                     // clears any prior submission messages (success/error).
 
     try {
-      await registerCompany(formData);                              //Calls the registerCompany function to register the company.(registerCompany is an async function that sends form data to the backend API.)
-      setSubmitStatus({
-        message:
-          "Company registered successfully! Redirecting to company listing...",
-        type: "success",
-      });
+      const token = localStorage.getItem("token");                  //Retrieves the JWT token stored after user login/signup.
+      if (!token) {
+        navigate("/signup");
+        return;
+      }
 
-      // Redirect to listing page after 2 seconds
-      setTimeout(() => {
-        navigate("/listing");
-      }, 2000);
+      const response = await axios.post(
+        "http://localhost:5000/api/companies/register",            //Sends a POST request to the backend /api/companies/register endpoint 
+        formData,                                                  //with the form data-The company registration data (name, email, address, etc.)
+        {
+          headers: {
+            "Content-Type": "application/json",                    //Tells the server we're sending JSON.
+            Authorization: `Bearer ${token}`,                      //Lets the backend verify the user.
+          },
+        }
+      );
+
+      if (response.status === 201) {
+        // Registration successful
+        setSubmitStatus({
+          message:
+            "Company registered successfully! Redirecting to company listing...",
+          type: "success",
+        });
+
+        // Redirect to listing page after 2 seconds
+        setTimeout(() => {
+          navigate("/listing");
+        }, 2000);
+      }
     } catch (error) {
       console.error("Registration error:", error);
       setSubmitStatus({
@@ -271,8 +315,86 @@ const Registration = () => {
     }
   };
 
+  // Sign out function
+  const handleSignOut = () => {
+    localStorage.removeItem("token");
+    navigate("/signup");
+  };
+
+  if (showAlert) {
+    return (
+      <div style={{
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        backgroundColor: 'rgba(0, 0, 0, 0.5)',
+        display: 'flex',
+        justifyContent: 'center',
+        alignItems: 'center',
+        zIndex: 1000
+      }}>
+        <div style={{
+          background: 'white',
+          padding: '2rem',
+          borderRadius: '10px',
+          boxShadow: '0 4px 15px rgba(0, 0, 0, 0.2)',
+          textAlign: 'center',
+          maxWidth: '90%',
+          width: '400px',
+          position: 'relative'
+        }}>
+          <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>⚠️</div>
+          <div style={{ 
+            fontSize: '1.2rem', 
+            color: '#dc3545', 
+            marginBottom: '1rem',
+            fontWeight: 'bold'
+          }}>
+            You cannot register without signing up first! 🔐
+          </div>
+          <div style={{ 
+            fontSize: '0.9rem', 
+            color: '#666'
+          }}>
+            Redirecting to signup page in a few seconds...
+          </div>
+          <div style={{
+            width: '100%',
+            height: '4px',
+            background: '#f0f0f0',
+            borderRadius: '2px',
+            marginTop: '1rem',
+            overflow: 'hidden'
+          }}>
+            <div style={{
+              height: '100%',
+              background: '#007bff',
+              animation: 'progress 3s linear',
+              width: '100%'
+            }} />
+          </div>
+          <style>
+            {`
+              @keyframes progress {
+                from { width: 100%; }
+                to { width: 0%; }
+              }
+            `}
+          </style>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="container">
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '10px' }}>
+        <button onClick={handleSignOut} style={{ background: '#dc3545', color: 'white', border: 'none', borderRadius: '5px', padding: '8px 16px', cursor: 'pointer', fontWeight: 'bold' }}>
+          Sign Out
+        </button>
+      </div>
       <div className="form-container">
         <h2 className="form-title">Company Registration</h2>
 
