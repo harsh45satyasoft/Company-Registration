@@ -1,17 +1,20 @@
-import React, { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";                          //For navigation one page to another
-import { checkEmailAvailability, registerCompany } from "../services/api";
+ import React, { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
+import { useUser } from "@clerk/clerk-react";
+import { registerCompany } from "../services/api";
 import MapComponent from "./MapComponent";
+import "./RegistrationPage.css";
+import { RedirectToSignIn } from "@clerk/clerk-react";
 
-const Registration = () => {
+const RegistrationPage = () => {
   const navigate = useNavigate();
+  const { isSignedIn, user, isLoaded } = useUser();
+
   const [formData, setFormData] = useState({
     firstName: "",
-    email: "",
-    password: "",
     companyName: "",
-    openingHours: "",
-    closingHours: "",
+    openingHours: "09:00",
+    closingHours: "17:00",
     address: "",
     latitude: "",
     longitude: "",
@@ -19,64 +22,29 @@ const Registration = () => {
   });
 
   const [errors, setErrors] = useState({});
-  const [emailStatus, setEmailStatus] = useState({
-    message: "",
-    isValid: null,
-  });
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false); 
   const [submitStatus, setSubmitStatus] = useState({ message: "", type: "" });
   const [isGeocodingAddress, setIsGeocodingAddress] = useState(false);
-  const [hasInitialLocation, setHasInitialLocation] = useState(false);     // Track if location was set from address
+  const [hasInitialLocation, setHasInitialLocation] = useState(false);
 
-  // Debounced email check
+  // Geocode address with debounce
   useEffect(() => {
-    if (formData.email && formData.email.includes("@")) {                //Check if Email Exists and Looks Valid
-      const timeoutId = setTimeout(async () => {                         //Only triggers the check if the user stops typing for 500ms.(This sets a 500ms timer before making the API call. This technique is called debouncing, which prevents making an API request every keystroke.)
-        try {
-          const result = await checkEmailAvailability(formData.email);   //Sends a POST request to check whether the email already exists in the database.
-          setEmailStatus({
-            message: result.message,
-            isValid: result.available,
-          });
-        } catch (error) {
-          setEmailStatus({                                               //If the API call fails (e.g., network issue), show a generic error message and reset validity.
-            message: "Error checking email",
-            isValid: null,
-          });
-        }
-      }, 500);
-
-      return () => clearTimeout(timeoutId);                             //If the user types again before 500ms is up, cancel the previous API call attempt. This avoids multiple pending timeouts.
-    } else {
-      setEmailStatus({ message: "", isValid: null });                   //If the email is empty or invalid (no "@"), just reset the status.
+    if (!formData.address.trim() || formData.address.length < 3) {
+      setFormData((prev) => ({ ...prev, latitude: "", longitude: "" }));
+      setHasInitialLocation(false);
+      return;
     }
-  }, [formData.email]);
 
-  // Geocode address when user types
-  useEffect(() => {
-    if (formData.address.trim() && formData.address.length > 2) {
-      const timeoutId = setTimeout(async () => {
-        await geocodeAddress(formData.address);
-      }, 1000);
+    const geocodeTimer = setTimeout(async () => {
+      await geocodeAddress(formData.address);
+    }, 1000);
 
-      return () => clearTimeout(timeoutId);
-    } else {
-      // Clear location when address is cleared
-      if (!formData.address.trim()) {
-        setFormData((prev) => ({
-          ...prev,
-          latitude: "",
-          longitude: "",
-        }));
-        setHasInitialLocation(false);
-      }
-    }
+    return () => clearTimeout(geocodeTimer);
   }, [formData.address]);
 
-  const geocodeAddress = async (address) => {                            //Defines an async function that accepts an address string and attempts to geocode it (i.e., get its coordinates).
-    if (isGeocodingAddress) return;                                      //If a geocoding request is already in progress (isGeocodingAddress is true), it exits early to prevent duplicate requests.
-
-    setIsGeocodingAddress(true);                                         //Sets the state to show that geocoding is happening — useful for disabling inputs, showing spinners, etc.
+  const geocodeAddress = async (address) => {
+    if (isGeocodingAddress) return;
+    setIsGeocodingAddress(true);
 
     try {
       const response = await fetch(
@@ -84,426 +52,394 @@ const Registration = () => {
           address
         )}&limit=1`
       );
-      const data = await response.json();                                //Converts the response into a JavaScript object (data is an array of location results).
 
-      if (data && data.length > 0) {                                     //If Location Found, Extract & Store Coordinates
-        const { lat, lon } = data[0];                                    //Extracts latitude and longitude from the first location result.
+      if (!response.ok) throw new Error("Geocoding service unavailable");
+
+      const data = await response.json();
+
+      if (data?.length > 0) {
+        const { lat, lon } = data[0];
         setFormData((prev) => ({
           ...prev,
           latitude: lat,
           longitude: lon,
         }));
-        setHasInitialLocation(true);                                // Mark that we have initial location from address
+        setHasInitialLocation(true);
       } else {
-        // If no results found, clear coordinates
-        setFormData((prev) => ({
-          ...prev,
-          latitude: "",
-          longitude: "",
-        }));
-        setHasInitialLocation(false);                                    // Mark that we don't have initial location from address
-      }   
+        throw new Error("Address not found");
+      }
     } catch (error) {
-      console.error("Geocoding error:", error);
-      // On error, clear coordinates
-      setFormData((prev) => ({
-        ...prev,
-        latitude: "",
-        longitude: "",
-      }));
+      console.error("Geocoding error:", error.message);
+      setFormData((prev) => ({ ...prev, latitude: "", longitude: "" }));
       setHasInitialLocation(false);
+
+      if (error.message !== "Address not found") {
+        setSubmitStatus({
+          message:
+            "Map service is currently unavailable. Please try again later.",
+          type: "error",
+        });
+      }
     } finally {
-      setIsGeocodingAddress(false);                                      //This line ensures that the geocoding status is reset whether the request succeeded or failed.
+      setIsGeocodingAddress(false);
     }
   };
 
-  const handleInputChange = (e) => {                                    //Handles input changes
+  const handleInputChange = (e) => {
     const { name, value, type, checked } = e.target;
     setFormData((prev) => ({
       ...prev,
       [name]: type === "checkbox" ? checked : value,
     }));
 
-    // Clear error(ex. clear name field) when user starts typing
+    // Clear error when user starts typing
     if (errors[name]) {
-      setErrors((prev) => ({
-        ...prev,
-        [name]: "",
-      }));
+      setErrors((prev) => ({ ...prev, [name]: "" }));
     }
   };
 
-// Enhanced location select handler - only updates coordinates, not address
   const handleLocationSelect = (lat, lng) => {
     setFormData((prev) => ({
       ...prev,
       latitude: lat.toString(),
       longitude: lng.toString(),
     }));
+    setHasInitialLocation(true);
   };
 
   const validateForm = () => {
     const newErrors = {};
 
-    if (!formData.firstName.trim()) {
-      newErrors.firstName = "Please enter first name";
-    }
+    // Required fields validation
+    const requiredFields = [
+      { name: "firstName", message: "Please enter your first name" },
+      { name: "companyName", message: "Please enter company name" },
+      { name: "openingHours", message: "Please enter opening hours" },
+      { name: "closingHours", message: "Please enter closing hours" },
+      { name: "address", message: "Please enter business address" },
+    ];
 
-    if (!formData.email.trim()) {
-      newErrors.email = "Please enter email";
-    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
-      newErrors.email = "Please enter a valid email";
-    }
+    requiredFields.forEach(({ name, message }) => {
+      if (!formData[name].trim()) newErrors[name] = message;
+    });
 
-    if (!formData.password.trim()) {
-      newErrors.password = "Please enter password";
-    } else if (formData.password.length < 6) {
-      newErrors.password = "Password must be at least 6 characters";
-    }
-
-    if (!formData.companyName.trim()) {
-      newErrors.companyName = "Please enter company name";
-    }
-
-    if (!formData.openingHours.trim()) {
-      newErrors.openingHours = "Please enter opening hours";
-    }
-
-    if (!formData.closingHours.trim()) {
-      newErrors.closingHours = "Please enter closing hours";
-    }
-
-    // Validate that closing time is after opening time
+    // Business hours validation
     if (formData.openingHours && formData.closingHours) {
-      const openingTime = new Date(`2000-01-01T${formData.openingHours}`);
-      const closingTime = new Date(`2000-01-01T${formData.closingHours}`);
+      const opening = new Date(`2000-01-01T${formData.openingHours}`);
+      const closing = new Date(`2000-01-01T${formData.closingHours}`);
 
-      if (closingTime <= openingTime) {
+      if (closing <= opening) {
         newErrors.closingHours = "Closing time must be after opening time";
       }
     }
 
-    if (!formData.address.trim()) {
-      newErrors.address = "Please enter address";
-    }
-
+    // Location validation
     if (!formData.latitude || !formData.longitude) {
-      newErrors.location = "Please select location on map or enter a valid address";
+      newErrors.location = "Please select a valid location on the map";
     }
 
+    // Terms validation
     if (!formData.agreeTerms) {
-      newErrors.agreeTerms = "Please agree to terms and conditions";
+      newErrors.agreeTerms = "You must agree to the terms and conditions";
     }
 
     return newErrors;
   };
 
-  const focusFirstErrorField = (errors) => {
-    const fieldOrder = [
-      "firstName",
-      "email",
-      "password",
-      "companyName",
-      "openingHours",
-      "closingHours",
-      "address",
-      "location",
-      "agreeTerms",
-    ];
-
-    for (const field of fieldOrder) {                                //Loops through the fields in the fieldOrder array
-      if (errors[field]) {                                           //If the field has an validation error
-        const element =                                              //This tries to find the DOM element for that field in the following priority
-          document.querySelector(`[name="${field}"]`) ||             //The || operator ensures it grabs the first match.
-          document.querySelector(`#${field}`) ||
-          document.querySelector(`.${field}-error`);
-        if (element) {
-          element.focus();                                           //element.focus() gives it focus so the user can start fixing the error.
-          element.scrollIntoView({ behavior: "smooth", block: "center" });  //scrollIntoView() scrolls the element into the center of the screen smoothly.
-          break;                                                            //break ensures only the first invalid field is acted on.
-        }
-      }
-    }
-  };
-
   const handleSubmit = async (e) => {
-    e.preventDefault();                                             //Prevents the browser from reloading the page when the form is submitted.
+    e.preventDefault();
 
-    const formErrors = validateForm();                              //Calls the validateForm function to validate the form.
-
-    if (Object.keys(formErrors).length > 0) {                       //If there are validation errors
-      setErrors(formErrors);                                        //stores the error messages for the UI to display.
-      focusFirstErrorField(formErrors);                             //Calls the focusFirstErrorField function to focus on the first invalid field.
-      return;                                                       //Exits the function.
-    } 
-
-    if (!emailStatus.isValid) {                                     //If the email is not available (already registered), it sets an email-specific error.
-      setErrors({ email: "Please use an available email address" });//Stores the error message for the UI to display.
-      document.querySelector('[name="email"]').focus();             //Focuses on the email field.
+    const formErrors = validateForm();
+    if (Object.keys(formErrors).length > 0) {
+      setErrors(formErrors);
       return;
     }
 
-    setIsSubmitting(true);                                          //can disable the submit button to prevent double submissions.
-    setSubmitStatus({ message: "", type: "" });                     // clears any prior submission messages (success/error).
+    setIsSubmitting(true);
+    setSubmitStatus({ message: "", type: "" });
 
     try {
-      await registerCompany(formData);                              //Calls the registerCompany function to register the company.(registerCompany is an async function that sends form data to the backend API.)
+      const registrationData = {
+        ...formData,
+        userId: user.id,
+        email: user.primaryEmailAddress.emailAddress,
+        coordinates: {
+          lat: parseFloat(formData.latitude),
+          lng: parseFloat(formData.longitude),
+        },
+      };
+
+      await registerCompany(registrationData);
+
       setSubmitStatus({
-        message:
-          "Company registered successfully! Redirecting to company listing...",
+        message: "Company registered successfully! Redirecting to dashboard...",
         type: "success",
       });
 
-      // Redirect to listing page after 2 seconds
-      setTimeout(() => {
-        navigate("/listing");
-      }, 2000);
+      setTimeout(() => navigate("/dashboard"), 2000);
     } catch (error) {
       console.error("Registration error:", error);
+
+      let errorMessage = "Registration failed. Please try again.";
+      if (error.response?.data?.message) {
+        errorMessage = error.response.data.message;
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+
       setSubmitStatus({
-        message:
-          error.response?.data?.message ||
-          "Registration failed. Please try again.",
+        message: errorMessage,
         type: "error",
       });
     } finally {
-      setIsSubmitting(false);                              //Resets the isSubmitting flag whether it succeeded or failed.
+      setIsSubmitting(false);
     }
   };
 
+  if (!isLoaded) {
+    return <div className="loading-container">Loading...</div>;
+  }
+
+  if (!isSignedIn) {
+    return <RedirectToSignIn />;
+  }
+
   return (
-    <div className="container">
-      <div className="form-container">
-        <h2 className="form-title">Company Registration</h2>
+    <div className="registration-container">
+      <div className="registration-card">
+        <div className="user-header">
+          <div className="user-info">
+            <span>Signed in as: </span>
+            <strong>{user.primaryEmailAddress.emailAddress}</strong>
+          </div>
+        </div>
+
+        <h1>Register Your Company</h1>
 
         {submitStatus.message && (
-          <div
-            style={{
-              padding: "12px",
-              borderRadius: "4px",
-              marginBottom: "20px",
-              backgroundColor:
-                submitStatus.type === "success" ? "#d4edda" : "#f8d7da",
-              color: submitStatus.type === "success" ? "#155724" : "#721c24",
-              border: `1px solid ${
-                submitStatus.type === "success" ? "#c3e6cb" : "#f5c6cb"
-              }`,
-            }}
-          >
+          <div className={`status-message ${submitStatus.type}`}>
             {submitStatus.message}
           </div>
         )}
 
-        <form onSubmit={handleSubmit}>
-          <div className="form-row">
+        <form onSubmit={handleSubmit} className="registration-form" noValidate>
+          <div className="form-grid">
+            {/* First Name */}
             <div className="form-group">
-              <label className="form-label">First Name *</label>
+              <label htmlFor="firstName">
+                Your First Name <span className="required">*</span>
+              </label>
               <input
+                id="firstName"
                 type="text"
                 name="firstName"
                 value={formData.firstName}
                 onChange={handleInputChange}
-                className={`form-input ${errors.firstName ? "error" : ""}`}
-                placeholder="Enter first name"
+                className={errors.firstName ? "error" : ""}
+                placeholder="Enter your first name"
+                aria-invalid={!!errors.firstName}
+                aria-describedby={
+                  errors.firstName ? "firstName-error" : undefined
+                }
               />
-              {errors.firstName && (                                               //errors is usually a state object (e.g., from useState) that holds form validation error messages.
-                <span className="error-message">{errors.firstName}</span>
+              {errors.firstName && (
+                <span id="firstName-error" className="error-message">
+                  {errors.firstName}
+                </span>
               )}
             </div>
 
+            {/* Company Name */}
             <div className="form-group">
-              <label className="form-label">Email *</label>
+              <label htmlFor="companyName">
+                Company Name <span className="required">*</span>
+              </label>
               <input
-                type="email"
-                name="email"
-                value={formData.email}
+                id="companyName"
+                type="text"
+                name="companyName"
+                value={formData.companyName}
                 onChange={handleInputChange}
-                className={`form-input ${errors.email ? "error" : ""}`}
-                placeholder="Enter email address"
+                className={errors.companyName ? "error" : ""}
+                placeholder="Enter company name"
+                aria-invalid={!!errors.companyName}
+                aria-describedby={
+                  errors.companyName ? "companyName-error" : undefined
+                }
               />
-              {errors.email && (
-                <span className="error-message">{errors.email}</span>
+              {errors.companyName && (
+                <span id="companyName-error" className="error-message">
+                  {errors.companyName}
+                </span>
               )}
-              {emailStatus.message && (
-                <span
-                  className={
-                    emailStatus.isValid ? "success-message" : "error-message"
-                  }
-                >
-                  {emailStatus.message}
+            </div>
+
+            {/* Business Hours */}
+            <div className="form-group">
+              <label htmlFor="openingHours">
+                Opening Hours <span className="required">*</span>
+              </label>
+              <input
+                id="openingHours"
+                type="time"
+                name="openingHours"
+                value={formData.openingHours}
+                onChange={handleInputChange}
+                className={errors.openingHours ? "error" : ""}
+                aria-invalid={!!errors.openingHours}
+                aria-describedby={
+                  errors.openingHours ? "openingHours-error" : undefined
+                }
+              />
+              {errors.openingHours && (
+                <span id="openingHours-error" className="error-message">
+                  {errors.openingHours}
                 </span>
               )}
             </div>
 
             <div className="form-group">
-              <label className="form-label">Password *</label>
+              <label htmlFor="closingHours">
+                Closing Hours <span className="required">*</span>
+              </label>
               <input
-                type="password"
-                name="password"
-                value={formData.password}
-                onChange={handleInputChange}
-                className={`form-input ${errors.password ? "error" : ""}`}
-                placeholder="Enter password (min 6 characters)"
-              />
-              {errors.password && (
-                <span className="error-message">{errors.password}</span>
-              )}
-            </div>
-          </div>
-
-          <div className="form-row">
-            <div className="form-group">
-              <label className="form-label">Company Name *</label>
-              <input
-                type="text"
-                name="companyName"
-                value={formData.companyName}
-                onChange={handleInputChange}
-                className={`form-input ${errors.companyName ? "error" : ""}`}
-                placeholder="Enter company name"
-              />
-              {errors.companyName && (
-                <span className="error-message">{errors.companyName}</span>
-              )}
-            </div>
-
-            <div className="form-group">
-              <label className="form-label">Opening Hours *</label>
-              <input
-                type="time"
-                name="openingHours"
-                value={formData.openingHours}
-                onChange={handleInputChange}
-                className={`form-input ${errors.openingHours ? "error" : ""}`}
-              />
-              {errors.openingHours && (
-                <span className="error-message">{errors.openingHours}</span>
-              )}
-            </div>
-
-            <div className="form-group">
-              <label className="form-label">Closing Hours *</label>
-              <input
+                id="closingHours"
                 type="time"
                 name="closingHours"
                 value={formData.closingHours}
                 onChange={handleInputChange}
-                className={`form-input ${errors.closingHours ? "error" : ""}`}
+                className={errors.closingHours ? "error" : ""}
+                aria-invalid={!!errors.closingHours}
+                aria-describedby={
+                  errors.closingHours ? "closingHours-error" : undefined
+                }
               />
               {errors.closingHours && (
-                <span className="error-message">{errors.closingHours}</span>
+                <span id="closingHours-error" className="error-message">
+                  {errors.closingHours}
+                </span>
               )}
             </div>
-          </div>
 
-          <div className="form-group">
-            <label className="form-label">Address *</label>
-            <input
-              type="text"
-              name="address"
-              value={formData.address}
-              onChange={handleInputChange}
-              className={`form-input ${errors.address ? "error" : ""}`}
-              placeholder="Enter company address (e.g., Sanjay Palace, Agra)"
-            />
-            {errors.address && (
-              <span className="error-message">{errors.address}</span>
-            )}
-            {isGeocodingAddress && (
-              <span style={{ fontSize: "12px", color: "#007bff" }}>
-                Finding location on map...
-              </span>
-            )}
-          </div>
-
-          <div className="form-group">
-            <label className="form-label">
-            Location on Map {hasInitialLocation && "(Drag marker to adjust)"}
-            </label>
-            <div className="map-container">
-              <MapComponent
-                onLocationSelect={handleLocationSelect}                                  //A function triggered when the user clicks on the map to select a new location.
-                selectedLocation={                                                       //Passes the current location to the map so it can display a pin/marker.
-                  formData.latitude && formData.longitude
-                    ? {
-                        lat: parseFloat(formData.latitude),
-                        lng: parseFloat(formData.longitude),
-                      }
-                    : null
-                }
-                isDraggable={true}                                                       // Enable draggable marker
-                userAddress={formData.address.trim()}                                    // Pass user address to show in popup
-                showAllCompanies={false}                                                 // Ensure this is registration mode 
-              />
-            </div>
-            {errors.location && (
-              <span className="error-message location-error">
-                {errors.location}
-              </span>
-            )}
-            {formData.latitude && formData.longitude && (                               //If both latitude and longitude are present, it displays them below the map
-              <div
-                style={{ fontSize: "12px", color: "#666", marginTop: "5px" }}
-              >
-                <strong>Coordinates:</strong>{" "}
-                {parseFloat(formData.latitude).toFixed(6)},{" "}   
-                {parseFloat(formData.longitude).toFixed(6)}
-                {hasInitialLocation && (                                               //If hasInitialLocation is true, it renders a <span> element.
-                  <span style={{ color: "#28a745", marginLeft: "10px" }}>
-                    ✓ Location found from address
-                  </span>
-                )}
-              </div>
-            )}
-          </div>
-
-          <div className="form-group" style={{ marginTop: "20px" }}>
-            <label
-              style={{
-                display: "flex",
-                alignItems: "center",
-                cursor: "pointer",
-                fontSize: "14px",
-              }}
-            >
+            {/* Address */}
+            <div className="form-group full-width">
+              <label htmlFor="address">
+                Business Address <span className="required">*</span>
+              </label>
               <input
-                type="checkbox"
-                name="agreeTerms"
-                checked={formData.agreeTerms}
+                id="address"
+                type="text"
+                name="address"
+                value={formData.address}
                 onChange={handleInputChange}
-                style={{
-                  marginRight: "8px",
-                  transform: "scale(1.2)",
-                }}
+                className={errors.address ? "error" : ""}
+                placeholder="Enter full business address"
+                aria-invalid={!!errors.address}
+                aria-describedby={errors.address ? "address-error" : undefined}
               />
-              I agree to the terms and conditions *
-            </label>
-            {errors.agreeTerms && (
-              <span className="error-message agreeTerms-error">
-                {errors.agreeTerms}
-              </span>
-            )}
-          </div>
+              {errors.address && (
+                <span id="address-error" className="error-message">
+                  {errors.address}
+                </span>
+              )}
+              {isGeocodingAddress && (
+                <span className="geocoding-status">
+                  Locating your address on the map...
+                </span>
+              )}
+            </div>
 
-          <button type="submit" className="submit-btn" disabled={isSubmitting}>
-            {isSubmitting ? "Registering..." : "Register Company"}
-          </button>
+            {/* Map */}
+            <div className="form-group full-width">
+              <label>
+                Business Location{" "}
+                {hasInitialLocation && (
+                  <span className="instruction">(Drag marker to adjust)</span>
+                )}
+              </label>
+              <div className="map-container">
+                <MapComponent
+                  onLocationSelect={handleLocationSelect}
+                  selectedLocation={
+                    formData.latitude && formData.longitude
+                      ? {
+                          lat: parseFloat(formData.latitude),
+                          lng: parseFloat(formData.longitude),
+                        }
+                      : null
+                  }
+                  isDraggable={true}
+                  userAddress={formData.address.trim()}
+                />
+              </div>
+              {errors.location && (
+                <span className="error-message">{errors.location}</span>
+              )}
+              {formData.latitude && formData.longitude && (
+                <div className="coordinates-display">
+                  <strong>Coordinates:</strong>{" "}
+                  {parseFloat(formData.latitude).toFixed(6)},{" "}
+                  {parseFloat(formData.longitude).toFixed(6)}
+                  {hasInitialLocation && (
+                    <span className="location-found">
+                      ✓ Location found from address
+                    </span>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Terms */}
+            <div className="form-group full-width terms-group">
+              <label className="terms-label">
+                <input
+                  type="checkbox"
+                  name="agreeTerms"
+                  checked={formData.agreeTerms}
+                  onChange={handleInputChange}
+                  aria-invalid={!!errors.agreeTerms}
+                  aria-describedby={
+                    errors.agreeTerms ? "agreeTerms-error" : undefined
+                  }
+                />
+                <span>
+                  I agree to the{" "}
+                  <a href="/terms" target="_blank" rel="noopener noreferrer">
+                    terms and conditions
+                  </a>{" "}
+                  <span className="required">*</span>
+                </span>
+              </label>
+              {errors.agreeTerms && (
+                <span id="agreeTerms-error" className="error-message">
+                  {errors.agreeTerms}
+                </span>
+              )}
+            </div>
+
+            {/* Submit Button */}
+            <div className="form-group full-width">
+              <button
+                type="submit"
+                className="submit-button"
+                disabled={isSubmitting}
+                aria-busy={isSubmitting}
+              >
+                {isSubmitting ? (
+                  <>
+                    <span className="spinner" aria-hidden="true"></span>
+                    Registering...
+                  </>
+                ) : (
+                  "Register Company"
+                )}
+              </button>
+            </div>
+          </div>
         </form>
       </div>
     </div>
   );
 };
 
-export default Registration;
-
-//disabled={isSubmitting}
-//This disables the button while the form is submitting, preventing multiple submissions.
-//isSubmitting is a state variable (likely from useState) that tracks whether the form submission is in progress.
-
-//Ternary operator: This conditionally renders text based on the value of isSubmitting.
-//true	"Registering..." (indicates loading)
-//false	"Register Company" (normal button text)
-
-//{parseFloat(formData.latitude).toFixed(6)} =>                            Rounded to 6 decimal places
-
-//Location on Map {hasInitialLocation && "(Drag marker to adjust)"} =>   If there is an initial location, it displays "(Drag marker to adjust)"
+export default RegistrationPage;
