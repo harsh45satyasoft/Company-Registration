@@ -3,8 +3,12 @@ import { useNavigate } from "react-router-dom";
 import { useUser } from "@clerk/clerk-react";
 import { registerCompany } from "../services/api";
 import MapComponent from "./MapComponent";
+<<<<<<< HEAD
 import "./RegistrationPage.css";
 import { RedirectToSignIn } from "@clerk/clerk-react";
+=======
+import axios from "axios";
+>>>>>>> c7cc7599aaa83831e9ad96deaea185ff250df4f7
 
 const RegistrationPage = () => {
   const navigate = useNavigate();
@@ -25,22 +29,107 @@ const RegistrationPage = () => {
   const [isSubmitting, setIsSubmitting] = useState(false); 
   const [submitStatus, setSubmitStatus] = useState({ message: "", type: "" });
   const [isGeocodingAddress, setIsGeocodingAddress] = useState(false);
+<<<<<<< HEAD
   const [hasInitialLocation, setHasInitialLocation] = useState(false);
+=======
+  const [hasInitialLocation, setHasInitialLocation] = useState(false);     // Track if location was set from address
+  const [loading, setLoading] = useState(false);
+  const [emailAvailable, setEmailAvailable] = useState(true);
+  const [showAlert, setShowAlert] = useState(false);
+
+  useEffect(() => {
+    // Step 1: Try to get the token from localStorage
+    const token = localStorage.getItem("token");
+
+    // Step 2: If no token is found (user is not authenticated)
+    if (!token) {
+      setShowAlert(true);                             // Show an alert to the user
+
+      // Step 3: Check if the user was redirected from login(“If the user came to this page from the login page (using navigation state), then immediately redirect them back to /login.”)
+      if (window.location.state && window.location.state.fromLogin) {
+        navigate("/login");                         // Redirect to login page
+      } else {
+
+        // Step 4: Wait for 3 seconds, then navigate to signup
+        const timer = setTimeout(() => {
+          navigate("/signup");
+        }, 3000);
+
+        // Step 5: Cleanup function in case component unmounts before 3 seconds
+        return () => clearTimeout(timer);
+      }
+    }
+  }, [navigate]);
+>>>>>>> c7cc7599aaa83831e9ad96deaea185ff250df4f7
 
   // Geocode address with debounce
   useEffect(() => {
+<<<<<<< HEAD
     if (!formData.address.trim() || formData.address.length < 3) {
       setFormData((prev) => ({ ...prev, latitude: "", longitude: "" }));
       setHasInitialLocation(false);
       return;
+=======
+    if (formData.email && formData.email.includes("@")) {                //Check if Email Exists and Looks Valid
+      const timeoutId = setTimeout(async () => {                         //Only triggers the check if the user stops typing for 500ms.(This sets a 500ms timer before making the API call. This technique is called debouncing, which prevents making an API request every keystroke.)
+        try {
+          const response = await axios.post(
+            "http://localhost:5000/api/companies/check-email",
+            { email: formData.email },
+            {
+              headers: {                                                //This is a standard format for sending authentication tokens in HTTP.
+                Authorization: `Bearer ${localStorage.getItem("token")}`, //Bearer is the type of token. The backend expects it in this format.
+              },
+            }
+          );
+          setEmailStatus({
+            message: response.data.message,
+            isValid: response.data.available,
+          });
+          setEmailAvailable(response.data.available);
+        } catch (error) {
+          setEmailStatus({                                               //If the API call fails (e.g., network issue), show a generic error message and reset validity.
+            message: "Error checking email",
+            isValid: null,
+          });
+        }
+      }, 500);
+
+      return () => clearTimeout(timeoutId);                             //If the user types again before 500ms is up, cancel the previous API call attempt. This avoids multiple pending timeouts.
+    } else {
+      setEmailStatus({ message: "", isValid: null });                   //If the email is empty or invalid (no "@"), just reset the status.
+>>>>>>> c7cc7599aaa83831e9ad96deaea185ff250df4f7
     }
 
+<<<<<<< HEAD
     const geocodeTimer = setTimeout(async () => {
       await geocodeAddress(formData.address);
     }, 1000);
 
     return () => clearTimeout(geocodeTimer);
   }, [formData.address]);
+=======
+  // Geocode address when user types
+  useEffect(() => {
+    if (formData.address.trim() && formData.address.length > 2) {
+      const timeoutId = setTimeout(async () => {
+        await geocodeAddress(formData.address);                        // 1-second delay before triggering the geocodeAddress() function.
+      }, 1000);
+
+      return () => clearTimeout(timeoutId);                            //If the user types again before 1 second is up, cancel the previous geocoding request.
+    } else {
+      // Clear location when address is cleared
+      if (!formData.address.trim()) {
+        setFormData((prev) => ({
+          ...prev,
+          latitude: "",
+          longitude: "",
+        }));
+        setHasInitialLocation(false);
+      }
+    }
+  }, [formData.address]);                                                //Runs whenever formData.address changes
+>>>>>>> c7cc7599aaa83831e9ad96deaea185ff250df4f7
 
   const geocodeAddress = async (address) => {
     if (isGeocodingAddress) return;
@@ -48,9 +137,9 @@ const RegistrationPage = () => {
 
     try {
       const response = await fetch(
-        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(
+        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(   //This fetch call sends a GET request to the Nominatim API to convert a human-readable address (like "New Delhi, India") into latitude and longitude (aka geocoding).
           address
-        )}&limit=1`
+        )}&limit=1`                                                      //Limits response to a single most relevant result
       );
 
       if (!response.ok) throw new Error("Geocoding service unavailable");
@@ -159,6 +248,7 @@ const RegistrationPage = () => {
     setSubmitStatus({ message: "", type: "" });
 
     try {
+<<<<<<< HEAD
       const registrationData = {
         ...formData,
         userId: user.id,
@@ -177,6 +267,38 @@ const RegistrationPage = () => {
       });
 
       setTimeout(() => navigate("/dashboard"), 2000);
+=======
+      const token = localStorage.getItem("token");                  //Retrieves the JWT token stored after user login/signup.
+      if (!token) {
+        navigate("/signup");
+        return;
+      }
+
+      const response = await axios.post(
+        "http://localhost:5000/api/companies/register",            //Sends a POST request to the backend /api/companies/register endpoint 
+        formData,                                                  //with the form data-The company registration data (name, email, address, etc.)
+        {
+          headers: {
+            "Content-Type": "application/json",                    //Tells the server we're sending JSON.
+            Authorization: `Bearer ${token}`,                      //Lets the backend verify the user.
+          },
+        }
+      );
+
+      if (response.status === 201) {
+        // Registration successful
+        setSubmitStatus({
+          message:
+            "Company registered successfully! Redirecting to company listing...",
+          type: "success",
+        });
+
+        // Redirect to listing page after 2 seconds
+        setTimeout(() => {
+          navigate("/listing");
+        }, 2000);
+      }
+>>>>>>> c7cc7599aaa83831e9ad96deaea185ff250df4f7
     } catch (error) {
       console.error("Registration error:", error);
 
@@ -196,6 +318,7 @@ const RegistrationPage = () => {
     }
   };
 
+<<<<<<< HEAD
   if (!isLoaded) {
     return <div className="loading-container">Loading...</div>;
   }
@@ -215,6 +338,90 @@ const RegistrationPage = () => {
         </div>
 
         <h1>Register Your Company</h1>
+=======
+  // Sign out function
+  const handleSignOut = () => {
+    localStorage.removeItem("token");
+    navigate("/signup");
+  };
+
+  if (showAlert) {
+    return (
+      <div style={{
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        backgroundColor: 'rgba(0, 0, 0, 0.5)',
+        display: 'flex',
+        justifyContent: 'center',
+        alignItems: 'center',
+        zIndex: 1000
+      }}>
+        <div style={{
+          background: 'white',
+          padding: '2rem',
+          borderRadius: '10px',
+          boxShadow: '0 4px 15px rgba(0, 0, 0, 0.2)',
+          textAlign: 'center',
+          maxWidth: '90%',
+          width: '400px',
+          position: 'relative'
+        }}>
+          <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>⚠️</div>
+          <div style={{ 
+            fontSize: '1.2rem', 
+            color: '#dc3545', 
+            marginBottom: '1rem',
+            fontWeight: 'bold'
+          }}>
+            You cannot register without signing up first! 🔐
+          </div>
+          <div style={{ 
+            fontSize: '0.9rem', 
+            color: '#666'
+          }}>
+            Redirecting to signup page in a few seconds...
+          </div>
+          <div style={{
+            width: '100%',
+            height: '4px',
+            background: '#f0f0f0',
+            borderRadius: '2px',
+            marginTop: '1rem',
+            overflow: 'hidden'
+          }}>
+            <div style={{
+              height: '100%',
+              background: '#007bff',
+              animation: 'progress 3s linear',
+              width: '100%'
+            }} />
+          </div>
+          <style>
+            {`
+              @keyframes progress {
+                from { width: 100%; }
+                to { width: 0%; }
+              }
+            `}
+          </style>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="container">
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '10px' }}>
+        <button onClick={handleSignOut} style={{ background: '#dc3545', color: 'white', border: 'none', borderRadius: '5px', padding: '8px 16px', cursor: 'pointer', fontWeight: 'bold' }}>
+          Sign Out
+        </button>
+      </div>
+      <div className="form-container">
+        <h2 className="form-title">Company Registration</h2>
+>>>>>>> c7cc7599aaa83831e9ad96deaea185ff250df4f7
 
         {submitStatus.message && (
           <div className={`status-message ${submitStatus.type}`}>

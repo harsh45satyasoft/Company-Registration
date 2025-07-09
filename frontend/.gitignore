@@ -14,9 +14,12 @@ dist
 dist-ssr
 *.local
 
+<<<<<<< HEAD
 # Environment variables
 .env
 .env.*
+=======
+>>>>>>> c7cc7599aaa83831e9ad96deaea185ff250df4f7
 
 # Editor directories and files
 .vscode/*
@@ -28,3 +31,8 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+
+# Environment variables
+.env
+.env.*

@@ -3,6 +3,7 @@ const router = express.Router();
 const { body, validationResult } = require("express-validator");
 const bcrypt = require("bcrypt");
 const Company = require("../models/Company");
+const auth = require("../middleware/auth");
 
 // Validation middleware
 const validateCompany = [
@@ -20,7 +21,7 @@ const validateCompany = [
 ];
 
 // Check email availability
-router.post("/check-email", async (req, res) => {
+router.post("/check-email", auth, async (req, res) => {
   try {
     const { email } = req.body;
     const existingCompany = await Company.findOne({
@@ -38,7 +39,7 @@ router.post("/check-email", async (req, res) => {
 });
 
 // Register company
-router.post("/register", validateCompany, async (req, res) => {
+router.post("/register", [auth, validateCompany], async (req, res) => {
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
@@ -82,6 +83,7 @@ router.post("/register", validateCompany, async (req, res) => {
         latitude: parseFloat(latitude),
         longitude: parseFloat(longitude),
       },
+      userId: req.user._id, // Add reference to the user who created the company
     });
 
     await company.save();
@@ -116,7 +118,7 @@ router.get("/", async (req, res) => {
     }
 
     const companies = await Company.find(query)
-      .select("-password")                           // (-)Exclude password
+      .select("-password")                             // Exclude password from the response, so it's not sent back to the client(The - sign means "do not include this field".)
       .sort({ createdAt: -1 }); 
 
     res.json(companies);
