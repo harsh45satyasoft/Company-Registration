@@ -33,16 +33,28 @@ const Registration = () => {
   const [showAlert, setShowAlert] = useState(false);
 
   useEffect(() => {
-    // Check if user is authenticated
-    const token = localStorage.getItem("token");                          //This tries to retrieve a token (usually a JWT or auth token) from the browser's localStorage.
+    // Step 1: Try to get the token from localStorage
+    const token = localStorage.getItem("token");
+
+    // Step 2: If no token is found (user is not authenticated)
     if (!token) {
-      setShowAlert(true);                                                 //You have a UI alert component (e.g., a red message that says "You must be signed in") controlled by showAlert state.
-      const timer = setTimeout(() => {
-        navigate("/signup");                                              //(after 3 seconds)Then you automatically navigate to the /signup
-      }, 3000);                                                           //After showing the alert, you give the user 3 seconds (3000ms) to read it.
-      return () => clearTimeout(timer);
+      setShowAlert(true);                             // Show an alert to the user
+
+      // Step 3: Check if the user was redirected from login(“If the user came to this page from the login page (using navigation state), then immediately redirect them back to /login.”)
+      if (window.location.state && window.location.state.fromLogin) {
+        navigate("/login");                         // Redirect to login page
+      } else {
+
+        // Step 4: Wait for 3 seconds, then navigate to signup
+        const timer = setTimeout(() => {
+          navigate("/signup");
+        }, 3000);
+
+        // Step 5: Cleanup function in case component unmounts before 3 seconds
+        return () => clearTimeout(timer);
+      }
     }
-  }, [navigate]);                                                         //If the component unmounts before the 3-second timeout finishes, this will cancel the timer to avoid memory leaks or unwanted navigation.
+  }, [navigate]);
 
   // Debounced email check
   useEffect(() => {

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { getCompanies } from "../services/api";
 import MapComponent from "./MapComponent";
 import { Search } from "lucide-react";
+import * as jwt_decode from "jwt-decode";
 
 const CompanyListing = () => {
   const [companies, setCompanies] = useState([]);
@@ -92,6 +93,38 @@ const CompanyListing = () => {
   
   const clearSelection = () => {                         //Deselect a company when user clicks outside or on a "clear" button
     setSelectedCompany(null);
+  };
+
+  const getUserIdFromToken = () => {
+    const token = localStorage.getItem("token");
+    if (!token) return null;
+    try {
+      const decoded = jwt_decode.default(token);
+      return decoded.userId || decoded.id || decoded._id || null;
+    } catch {
+      return null;
+    }
+  };
+
+  const userId = getUserIdFromToken();
+
+  const handleDelete = async (companyId) => {
+    if (!window.confirm("Are you sure you want to delete this company?")) return;
+    try {
+      const token = localStorage.getItem("token");
+      const response = await fetch(`http://localhost:5000/api/companies/${companyId}`, {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      if (!response.ok) throw new Error("Failed to delete company");
+      setCompanies((prev) => prev.filter((c) => c._id !== companyId));
+      setFilteredCompanies((prev) => prev.filter((c) => c._id !== companyId));
+    } catch (err) {
+      alert(err.message || "Error deleting company");
+    }
   };
 
   if (loading) {
@@ -405,6 +438,24 @@ const CompanyListing = () => {
                       >
                         Currently Selected - View on Map
                       </div>
+                    )}
+                    {userId && company.ownerId === userId && (
+                      <button
+                        onClick={e => { e.stopPropagation(); handleDelete(company._id); }}       // stopPropagation() prevents the click event from bubbling up to the parent element(It only stops the event from reaching ancestor elements.)
+                        style={{
+                          background: '#dc3545',
+                          color: 'white',
+                          border: 'none',
+                          borderRadius: '5px',
+                          padding: '6px 14px',
+                          cursor: 'pointer',
+                          float: 'right',
+                          marginLeft: '10px',
+                          fontWeight: 'bold',
+                        }}
+                      >
+                        Delete
+                      </button>
                     )}
                   </div>
                 ))}

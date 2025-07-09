@@ -3,6 +3,7 @@ import { BrowserRouter as Router, Routes, Route, Link } from "react-router-dom";
 import Registration from "./components/Registration";
 import CompanyListing from "./components/CompanyListing";
 import SignUp from "./components/SignUp";
+import Login from "./components/Login";
 import "./styles/global.css";
 
 function App() {
@@ -90,6 +91,7 @@ function App() {
 
         <Routes>
           <Route path="/signup" element={<SignUp />} />
+          <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Registration />} />
           <Route path="/listing" element={<CompanyListing />} />
           <Route path="/" element={<SignUp />} />

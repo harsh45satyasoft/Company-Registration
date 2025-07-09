@@ -212,6 +212,10 @@ const SignUp = () => {
 
         {error && <div className="error-message">{error}</div>}
       </form>
+      <div style={{ textAlign: 'center', marginTop: '15px' }}>
+        <span>Already have an account? </span>
+        <a href="/login" style={{ color: '#007bff', textDecoration: 'underline', cursor: 'pointer' }}>Log in</a>
+      </div>
     </div>
   );
 };
